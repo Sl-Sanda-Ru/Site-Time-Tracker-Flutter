@@ -18,7 +18,7 @@ jobs:
         with:
           flutter-version: '3.22.2'
           channel: stable
-          cache: true  # speeds up builds
+          cache: true
 
       - name: Setup Java
         uses: actions/setup-java@v4
@@ -26,11 +26,17 @@ jobs:
           java-version: '17'
           distribution: 'temurin'
 
-      - name: Install Android SDK components
+      - name: Install Android SDK Command-line tools
         run: |
-          yes | sdkmanager --licenses
-          sdkmanager "platform-tools" "platforms;android-34" "build-tools;34.0.0" \
-                     "cmake;3.22.1" "ndk;27.0.12077973"
+          sudo apt-get update
+          sudo apt-get install -y wget unzip
+          wget https://dl.google.com/android/repository/commandlinetools-linux-11076708_latest.zip -O cmdline-tools.zip
+          mkdir -p $ANDROID_HOME/cmdline-tools
+          unzip -q cmdline-tools.zip -d $ANDROID_HOME/cmdline-tools
+          mv $ANDROID_HOME/cmdline-tools/cmdline-tools $ANDROID_HOME/cmdline-tools/latest
+          yes | $ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager --licenses
+          $ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager "platform-tools" "platforms;android-34" "build-tools;34.0.0" \
+            "cmake;3.22.1" "ndk;27.0.12077973"
 
       - name: Cache Gradle
         uses: actions/cache@v4
@@ -42,8 +48,9 @@ jobs:
       - name: Install dependencies
         run: flutter pub get
 
+
       - name: Build release APK
-        run: flutter build apk --release --no-tree-shake-icons
+        run: flutter build apk --release
 
       - name: Upload release APK
         uses: actions/upload-artifact@v4
