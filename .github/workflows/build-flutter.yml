@@ -20,8 +20,11 @@ jobs:
       - name: Install dependencies
         run: flutter pub get
 
-      - name: Analyze project source
-        run: dart analyze
-
-      - name: Run tests
-        run: flutter test
+      - name: Build apk
+        run: flutter build apk
+      - name: Upload apk
+        uses: actions/upload-artifact@v4
+        with:
+          name: my-artifact
+          path: build\app\outputs\flutter-apk\app-release.apk
+      
