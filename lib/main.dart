@@ -7,6 +7,8 @@ import 'package:geolocator/geolocator.dart';
 import 'package:geocoding/geocoding.dart';
 import 'package:flutter_local_notifications/flutter_local_notifications.dart';
 import 'package:dynamic_color/dynamic_color.dart';
+import 'package:shared_preferences/shared_preferences.dart';
+
 import 'note_model.dart';
 
 final FlutterLocalNotificationsPlugin notificationsPlugin =
@@ -43,29 +45,54 @@ Future<void> main() async {
   runApp(const NotesApp());
 }
 
-class NotesApp extends StatelessWidget {
+class NotesApp extends StatefulWidget {
   const NotesApp({super.key});
+
+  @override
+  State<NotesApp> createState() => _NotesAppState();
+}
+
+class _NotesAppState extends State<NotesApp> {
+  ThemeMode _themeMode = ThemeMode.system;
+
+  @override
+  void initState() {
+    super.initState();
+    _loadTheme();
+  }
+
+  Future<void> _loadTheme() async {
+    final prefs = await SharedPreferences.getInstance();
+    final themeIndex = prefs.getInt('themeMode') ?? 0;
+    setState(() {
+      _themeMode = ThemeMode.values[themeIndex];
+    });
+  }
+
+  Future<void> _setTheme(ThemeMode mode) async {
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setInt('themeMode', ThemeMode.values.indexOf(mode));
+    setState(() {
+      _themeMode = mode;
+    });
+  }
 
   @override
   Widget build(BuildContext context) {
     return DynamicColorBuilder(
       builder: (ColorScheme? lightDynamic, ColorScheme? darkDynamic) {
-        ColorScheme lightColorScheme;
-        ColorScheme darkColorScheme;
-
-        if (lightDynamic != null && darkDynamic != null) {
-          lightColorScheme = lightDynamic.harmonized();
-          darkColorScheme = darkDynamic.harmonized();
-        } else {
-          lightColorScheme = ColorScheme.fromSwatch(
-            primarySwatch: _defaultColor,
-            brightness: Brightness.light,
-          );
-          darkColorScheme = ColorScheme.fromSwatch(
-            primarySwatch: _defaultColor,
-            brightness: Brightness.dark,
-          );
-        }
+        final lightColorScheme =
+            lightDynamic?.harmonized() ??
+            ColorScheme.fromSwatch(
+              primarySwatch: _defaultColor,
+              brightness: Brightness.light,
+            );
+        final darkColorScheme =
+            darkDynamic?.harmonized() ??
+            ColorScheme.fromSwatch(
+              primarySwatch: _defaultColor,
+              brightness: Brightness.dark,
+            );
 
         return MaterialApp(
           title: 'Location Timer Notes',
@@ -74,8 +101,8 @@ class NotesApp extends StatelessWidget {
             useMaterial3: true,
             colorScheme: darkColorScheme,
           ),
-          themeMode: ThemeMode.system,
-          home: const NotesPage(),
+          themeMode: _themeMode,
+          home: NotesPage(themeMode: _themeMode, onThemeChanged: _setTheme),
         );
       },
     );
@@ -83,7 +110,14 @@ class NotesApp extends StatelessWidget {
 }
 
 class NotesPage extends StatefulWidget {
-  const NotesPage({super.key});
+  final ThemeMode themeMode;
+  final ValueChanged<ThemeMode> onThemeChanged;
+
+  const NotesPage({
+    super.key,
+    required this.themeMode,
+    required this.onThemeChanged,
+  });
 
   @override
   State<NotesPage> createState() => _NotesPageState();
@@ -110,6 +144,11 @@ class _NotesPageState extends State<NotesPage> {
       await _jsonFile.create(recursive: true);
       await _jsonFile.writeAsString(json.encode([]));
     }
+
+    // ✅ Load notes from file
+    final String contents = await _jsonFile.readAsString();
+    final List<dynamic> jsonData = json.decode(contents);
+    _notes = jsonData.map((e) => Note.fromJson(e)).toList();
 
     final ongoing = _notes.where((n) => n.endTime == null).toList();
     if (ongoing.isNotEmpty) {
@@ -327,6 +366,22 @@ class _NotesPageState extends State<NotesPage> {
                 ? 'Switch to List View'
                 : 'Switch to Grid View',
             onPressed: _toggleView,
+          ),
+          PopupMenuButton<String>(
+            onSelected: (value) {
+              if (value == 'Light') widget.onThemeChanged(ThemeMode.light);
+              if (value == 'Dark') widget.onThemeChanged(ThemeMode.dark);
+              if (value == 'System') widget.onThemeChanged(ThemeMode.system);
+            },
+            itemBuilder: (context) => [
+              const PopupMenuItem(value: 'Light', child: Text('Light Mode')),
+              const PopupMenuItem(value: 'Dark', child: Text('Dark Mode')),
+              const PopupMenuItem(
+                value: 'System',
+                child: Text('System Default'),
+              ),
+            ],
+            icon: const Icon(Icons.color_lens),
           ),
           IconButton(
             icon: const Icon(Icons.delete_sweep),
