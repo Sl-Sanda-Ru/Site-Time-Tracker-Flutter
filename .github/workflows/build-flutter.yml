@@ -1,30 +1,52 @@
-name: Flutter
+name: Flutter APK Build
 
 on:
   push:
-  workflow_dispatch: 
+    branches: [main]
+  workflow_dispatch:
 
 jobs:
   build:
     runs-on: ubuntu-latest
 
     steps:
-      - uses: actions/checkout@v4
+      - name: Checkout repository
+        uses: actions/checkout@v4
 
-      - name: Setup Flutter SDK
-        uses: flutter-actions/setup-flutter@v4
+      - name: Setup Flutter
+        uses: subosito/flutter-action@v2
         with:
+          flutter-version: '3.22.2'
           channel: stable
-          version: 3.32.8
+          cache: true  # speeds up builds
+
+      - name: Setup Java
+        uses: actions/setup-java@v4
+        with:
+          java-version: '17'
+          distribution: 'temurin'
+
+      - name: Install Android SDK components
+        run: |
+          yes | sdkmanager --licenses
+          sdkmanager "platforms;android-34" "build-tools;34.0.0" \
+                     "cmake;3.22.1" "ndk;27.0.12077973"
+
+      - name: Cache Gradle
+        uses: actions/cache@v4
+        with:
+          path: ~/.gradle/caches
+          key: gradle-${{ hashFiles('**/*.gradle*', '**/gradle-wrapper.properties') }}
+          restore-keys: gradle-
 
       - name: Install dependencies
         run: flutter pub get
 
-      - name: Build apk
-        run: flutter build apk
-      - name: Upload apk
+      - name: Build release APK
+        run: flutter build apk --release
+
+      - name: Upload release APK
         uses: actions/upload-artifact@v4
         with:
-          name: my-artifact
+          name: app-release
           path: build/app/outputs/flutter-apk/app-release.apk
-      
