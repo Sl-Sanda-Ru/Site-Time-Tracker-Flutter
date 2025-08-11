@@ -1,6 +1,7 @@
 # ⏱️ Site-Time-Tracker-Flutter
 
 A Flutter application to track your work hours on a specific site. Designed to help you monitor and manage your time efficiently. 🕒
+[![Flutter APK Build](https://github.com/Sl-Sanda-Ru/Site-Time-Tracker-Flutter/actions/workflows/build-flutter.yml/badge.svg)](https://github.com/Sl-Sanda-Ru/Site-Time-Tracker-Flutter/actions/workflows/build-flutter.yml)
 <p align="center">
   <img width="540" height="1200" alt="Screenshot_20250810-005930" src="https://github.com/user-attachments/assets/94b5eabf-58e7-455f-b71b-5d599a649a99" />
 </p>
