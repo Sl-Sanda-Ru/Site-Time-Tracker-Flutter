@@ -246,6 +246,25 @@ class _NotesPageState extends State<NotesPage> {
     return 'Unknown location';
   }
 
+  String _formatDuration(String startIso, String endIso) {
+    try {
+      final start = DateTime.parse(startIso);
+      final end = DateTime.parse(endIso);
+      final diff = end.difference(start);
+
+      final hours = diff.inHours;
+      final minutes = diff.inMinutes.remainder(60);
+
+      if (hours > 0) {
+        return '${hours}h ${minutes}m';
+      } else {
+        return '${minutes}m';
+      }
+    } catch (_) {
+      return '';
+    }
+  }
+
   Future<void> _showOngoingNotification(Note note) async {
     final startLocal = DateTime.parse(
       note.startTime,
@@ -423,6 +442,26 @@ class _NotesPageState extends State<NotesPage> {
 
   Widget _buildNoteCard(Note note, int index) {
     final ongoing = note.endTime == null;
+
+    String _formatDuration(String startIso, String endIso) {
+      try {
+        final start = DateTime.parse(startIso);
+        final end = DateTime.parse(endIso);
+        final diff = end.difference(start);
+
+        final hours = diff.inHours;
+        final minutes = diff.inMinutes.remainder(60);
+
+        if (hours > 0) {
+          return '${hours}h ${minutes}m';
+        } else {
+          return '${minutes}m';
+        }
+      } catch (_) {
+        return '';
+      }
+    }
+
     return Card(
       elevation: 2,
       shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
@@ -446,11 +485,21 @@ class _NotesPageState extends State<NotesPage> {
               ),
               const SizedBox(height: 6),
               Text(
-                'End: ${note.endTime != null ? _formatIso(note.endTime!) : 'Ongoing'}',
+                'End: ${ongoing ? 'Ongoing' : _formatIso(note.endTime!)}',
                 style: const TextStyle(fontSize: 12),
                 maxLines: 1,
                 overflow: TextOverflow.ellipsis,
               ),
+              if (!ongoing) ...[
+                const SizedBox(height: 6),
+                Text(
+                  'Duration: ${_formatDuration(note.startTime, note.endTime!)}',
+                  style: const TextStyle(
+                    fontSize: 12,
+                    fontWeight: FontWeight.w600,
+                  ),
+                ),
+              ],
               const SizedBox(height: 6),
               Text(
                 'Address: ${note.address}',
