@@ -5,7 +5,7 @@ plugins {
 }
 
 android {
-    namespace = "lk.sanda.timerget.timer"
+    namespace = "lk.sanda.locationtimer"
     compileSdk = flutter.compileSdkVersion
     ndkVersion = "27.0.12077973"
 
@@ -20,7 +20,7 @@ android {
     }
 
     defaultConfig {
-        applicationId = "lk.sanda.timerget.timer"
+        applicationId = "lk.sanda.locationtimer"
         minSdk = flutter.minSdkVersion
         targetSdk = flutter.targetSdkVersion
         versionCode = flutter.versionCode

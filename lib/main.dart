@@ -443,31 +443,45 @@ class _NotesPageState extends State<NotesPage> {
   Widget _buildNoteCard(Note note, int index) {
     final ongoing = note.endTime == null;
 
-    String _formatDuration(String startIso, String endIso) {
-      try {
-        final start = DateTime.parse(startIso);
-        final end = DateTime.parse(endIso);
-        final diff = end.difference(start);
-
-        final hours = diff.inHours;
-        final minutes = diff.inMinutes.remainder(60);
-
-        if (hours > 0) {
-          return '${hours}h ${minutes}m';
-        } else {
-          return '${minutes}m';
-        }
-      } catch (_) {
-        return '';
-      }
-    }
-
     return Card(
       elevation: 2,
       shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
       child: InkWell(
         borderRadius: BorderRadius.circular(12),
         onTap: () => _openNoteDetail(note, index),
+        onLongPress: ongoing
+            ? null // Disable long press if still running
+            : () async {
+                final confirm = await showDialog<bool>(
+                  context: context,
+                  builder: (context) => AlertDialog(
+                    title: const Text('Delete Note'),
+                    content: const Text(
+                      'Are you sure you want to delete this note?',
+                    ),
+                    actions: [
+                      TextButton(
+                        onPressed: () => Navigator.of(context).pop(false),
+                        child: const Text('Cancel'),
+                      ),
+                      TextButton(
+                        onPressed: () => Navigator.of(context).pop(true),
+                        child: const Text('Delete'),
+                      ),
+                    ],
+                  ),
+                );
+
+                if (confirm == true) {
+                  setState(() {
+                    _notes.removeAt(index);
+                  });
+                  await _saveNotes();
+                  ScaffoldMessenger.of(
+                    context,
+                  ).showSnackBar(const SnackBar(content: Text('Note deleted')));
+                }
+              },
         child: Padding(
           padding: const EdgeInsets.all(12.0),
           child: Column(

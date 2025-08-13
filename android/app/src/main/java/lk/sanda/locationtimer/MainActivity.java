@@ -1,4 +1,4 @@
-package lk.sanda.timerget.timer;
+package lk.sanda.locationtimer;
 
 import io.flutter.embedding.android.FlutterActivity;
 
