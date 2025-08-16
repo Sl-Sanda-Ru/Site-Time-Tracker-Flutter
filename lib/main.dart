@@ -1,5 +1,6 @@
 import 'dart:convert';
 import 'dart:io';
+import 'dart:async';
 
 import 'package:flutter/material.dart';
 import 'package:path_provider/path_provider.dart';
@@ -20,6 +21,29 @@ const String notificationChannelName = 'Tracking';
 
 const _defaultColor = Colors.indigo;
 
+// Utility function to format duration
+String formatDuration(String startIso, String? endIso) {
+  try {
+    final start = DateTime.parse(startIso);
+    final end = endIso != null ? DateTime.parse(endIso) : DateTime.now();
+    final diff = end.difference(start);
+
+    final hours = diff.inHours;
+    final minutes = diff.inMinutes.remainder(60);
+    final seconds = diff.inSeconds.remainder(60);
+
+    if (hours > 0) {
+      return '${hours}h ${minutes}m ${seconds}s';
+    } else if (minutes > 0) {
+      return '${minutes}m ${seconds}s';
+    } else {
+      return '${seconds}s';
+    }
+  } catch (_) {
+    return '';
+  }
+}
+
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
 
@@ -30,17 +54,35 @@ Future<void> main() async {
   );
   await notificationsPlugin.initialize(initSettings);
 
-  const AndroidNotificationChannel channel = AndroidNotificationChannel(
+  const AndroidNotificationChannel startChannel = AndroidNotificationChannel(
+    'start_channel',
+    'Note Start',
+    description: 'Plays sound when a note starts',
+    importance: Importance.high, // show heads-up + sound
+    playSound: true,
+    enableVibration: true,
+  );
+
+  const AndroidNotificationChannel trackingChannel = AndroidNotificationChannel(
     notificationChannelId,
     notificationChannelName,
-    importance: Importance.high,
     description: 'Ongoing tracking notification',
+    importance: Importance.low, // quiet updates
+    playSound: false,
+    enableVibration: false,
+    showBadge: false,
   );
   await notificationsPlugin
       .resolvePlatformSpecificImplementation<
         AndroidFlutterLocalNotificationsPlugin
       >()
-      ?.createNotificationChannel(channel);
+      ?.createNotificationChannel(startChannel);
+
+  await notificationsPlugin
+      .resolvePlatformSpecificImplementation<
+        AndroidFlutterLocalNotificationsPlugin
+      >()
+      ?.createNotificationChannel(trackingChannel);
 
   runApp(const NotesApp());
 }
@@ -129,11 +171,33 @@ class _NotesPageState extends State<NotesPage> {
   final String _fileName = 'notes.json';
   bool _fileReady = false;
   bool _isGridView = false;
+  Timer? _timer;
+  Timer? _notificationTimer;
 
   @override
   void initState() {
     super.initState();
     _initFileAndNotes();
+    _timer = Timer.periodic(const Duration(seconds: 1), (timer) {
+      if (_notes.any((note) => note.endTime == null)) {
+        setState(() {});
+      }
+    });
+    _notificationTimer = Timer.periodic(const Duration(seconds: 1), (timer) {
+      final ongoing = _notes.where((n) => n.endTime == null).toList();
+      if (ongoing.isNotEmpty) {
+        _showOngoingNotification(ongoing.last);
+      } else {
+        timer.cancel();
+      }
+    });
+  }
+
+  @override
+  void dispose() {
+    _timer?.cancel();
+    _notificationTimer?.cancel();
+    super.dispose();
   }
 
   Future<void> _initFileAndNotes() async {
@@ -145,7 +209,6 @@ class _NotesPageState extends State<NotesPage> {
       await _jsonFile.writeAsString(json.encode([]));
     }
 
-    // ✅ Load notes from file
     final String contents = await _jsonFile.readAsString();
     final List<dynamic> jsonData = json.decode(contents);
     _notes = jsonData.map((e) => Note.fromJson(e)).toList();
@@ -193,6 +256,7 @@ class _NotesPageState extends State<NotesPage> {
       });
       await _saveNotes();
       await _cancelOngoingNotification();
+      _notificationTimer?.cancel();
       ScaffoldMessenger.of(
         context,
       ).showSnackBar(const SnackBar(content: Text('All notes cleared')));
@@ -246,38 +310,18 @@ class _NotesPageState extends State<NotesPage> {
     return 'Unknown location';
   }
 
-  String _formatDuration(String startIso, String endIso) {
-    try {
-      final start = DateTime.parse(startIso);
-      final end = DateTime.parse(endIso);
-      final diff = end.difference(start);
-
-      final hours = diff.inHours;
-      final minutes = diff.inMinutes.remainder(60);
-
-      if (hours > 0) {
-        return '${hours}h ${minutes}m';
-      } else {
-        return '${minutes}m';
-      }
-    } catch (_) {
-      return '';
-    }
-  }
-
   Future<void> _showOngoingNotification(Note note) async {
-    final startLocal = DateTime.parse(
-      note.startTime,
-    ).toLocal().toString().split('.').first;
-    final body = '${note.address}\nStarted: $startLocal';
+    final duration = formatDuration(note.startTime, null);
+    final body = duration;
 
     final androidDetails = AndroidNotificationDetails(
       notificationChannelId,
       notificationChannelName,
-      importance: Importance.high,
-      priority: Priority.high,
+      importance: Importance.low,
+      priority: Priority.low,
       ongoing: true,
       autoCancel: false,
+      playSound: false, // Disable sound for silent updates
       styleInformation: const DefaultStyleInformation(true, true),
     );
 
@@ -333,7 +377,34 @@ class _NotesPageState extends State<NotesPage> {
         _notes.add(note);
       });
       await _saveNotes();
+      final androidDetails = AndroidNotificationDetails(
+        'start_channel',
+        'Note Start',
+        importance: Importance.high,
+        priority: Priority.high,
+        playSound: true,
+      );
+
+      final details = NotificationDetails(android: androidDetails);
+      await notificationsPlugin.show(
+        DateTime.now().millisecondsSinceEpoch ~/ 1000, // unique ID
+        'Note Started',
+        'Tracking started at $address',
+        details,
+      );
       await _showOngoingNotification(note);
+      if (!_notificationTimer!.isActive) {
+        _notificationTimer = Timer.periodic(const Duration(seconds: 1), (
+          timer,
+        ) {
+          final ongoing = _notes.where((n) => n.endTime == null).toList();
+          if (ongoing.isNotEmpty) {
+            _showOngoingNotification(ongoing.last);
+          } else {
+            timer.cancel();
+          }
+        });
+      }
       ScaffoldMessenger.of(
         context,
       ).showSnackBar(const SnackBar(content: Text('Started note')));
@@ -353,6 +424,7 @@ class _NotesPageState extends State<NotesPage> {
     final stillOngoing = _notes.any((n) => n.endTime == null);
     if (!stillOngoing) {
       await _cancelOngoingNotification();
+      _notificationTimer?.cancel();
     } else {
       final next = _notes.firstWhere((n) => n.endTime == null);
       await _showOngoingNotification(next);
@@ -450,7 +522,7 @@ class _NotesPageState extends State<NotesPage> {
         borderRadius: BorderRadius.circular(12),
         onTap: () => _openNoteDetail(note, index),
         onLongPress: ongoing
-            ? null // Disable long press if still running
+            ? null
             : () async {
                 final confirm = await showDialog<bool>(
                   context: context,
@@ -504,16 +576,14 @@ class _NotesPageState extends State<NotesPage> {
                 maxLines: 1,
                 overflow: TextOverflow.ellipsis,
               ),
-              if (!ongoing) ...[
-                const SizedBox(height: 6),
-                Text(
-                  'Duration: ${_formatDuration(note.startTime, note.endTime!)}',
-                  style: const TextStyle(
-                    fontSize: 12,
-                    fontWeight: FontWeight.w600,
-                  ),
+              const SizedBox(height: 6),
+              Text(
+                'Duration: ${formatDuration(note.startTime, note.endTime)}',
+                style: const TextStyle(
+                  fontSize: 12,
+                  fontWeight: FontWeight.w600,
                 ),
-              ],
+              ),
               const SizedBox(height: 6),
               Text(
                 'Address: ${note.address}',
@@ -556,11 +626,34 @@ class _NotesPageState extends State<NotesPage> {
   }
 }
 
-class NoteDetailPage extends StatelessWidget {
+class NoteDetailPage extends StatefulWidget {
   final Note note;
   final Future<void> Function() onEnd;
 
   const NoteDetailPage({super.key, required this.note, required this.onEnd});
+
+  @override
+  State<NoteDetailPage> createState() => _NoteDetailPageState();
+}
+
+class _NoteDetailPageState extends State<NoteDetailPage> {
+  Timer? _timer;
+
+  @override
+  void initState() {
+    super.initState();
+    if (widget.note.endTime == null) {
+      _timer = Timer.periodic(const Duration(seconds: 1), (timer) {
+        setState(() {});
+      });
+    }
+  }
+
+  @override
+  void dispose() {
+    _timer?.cancel();
+    super.dispose();
+  }
 
   String _formatIso(String iso) {
     try {
@@ -572,7 +665,7 @@ class NoteDetailPage extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final ongoing = note.endTime == null;
+    final ongoing = widget.note.endTime == null;
     return Scaffold(
       appBar: AppBar(
         title: const Text('Note Details'),
@@ -585,17 +678,22 @@ class NoteDetailPage extends StatelessWidget {
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
             Text(
-              'Start: ${_formatIso(note.startTime)}',
+              'Start: ${_formatIso(widget.note.startTime)}',
               style: const TextStyle(fontSize: 18),
             ),
             const SizedBox(height: 12),
             Text(
-              'End: ${note.endTime != null ? _formatIso(note.endTime!) : 'Ongoing'}',
+              'End: ${ongoing ? 'Ongoing' : _formatIso(widget.note.endTime!)}',
               style: const TextStyle(fontSize: 18),
             ),
             const SizedBox(height: 12),
             Text(
-              'Address: ${note.address}',
+              'Duration: ${formatDuration(widget.note.startTime, widget.note.endTime)}',
+              style: const TextStyle(fontSize: 16, fontWeight: FontWeight.w600),
+            ),
+            const SizedBox(height: 12),
+            Text(
+              'Address: ${widget.note.address}',
               style: const TextStyle(fontSize: 16),
             ),
             const SizedBox(height: 12),
@@ -603,7 +701,7 @@ class NoteDetailPage extends StatelessWidget {
             if (ongoing)
               ElevatedButton.icon(
                 onPressed: () async {
-                  await onEnd();
+                  await widget.onEnd();
                 },
                 icon: const Icon(Icons.stop),
                 label: const Text('End Timer'),
