@@ -9,6 +9,7 @@ import 'package:geocoding/geocoding.dart';
 import 'package:flutter_local_notifications/flutter_local_notifications.dart';
 import 'package:dynamic_color/dynamic_color.dart';
 import 'package:shared_preferences/shared_preferences.dart';
+import 'package:flutter/services.dart';
 
 import 'note_model.dart';
 
@@ -21,7 +22,6 @@ const String notificationChannelName = 'Tracking';
 
 const _defaultColor = Colors.indigo;
 
-// Utility function to format duration
 String formatDuration(String startIso, String? endIso) {
   try {
     final start = DateTime.parse(startIso);
@@ -200,6 +200,43 @@ class _NotesPageState extends State<NotesPage> {
     super.dispose();
   }
 
+  Future<void> _copyReportToClipboard() async {
+    try {
+      final buffer = StringBuffer();
+
+      for (final note in _notes) {
+        final start = DateTime.parse(note.startTime).toLocal();
+        final end = note.endTime != null
+            ? DateTime.parse(note.endTime!).toLocal()
+            : null;
+        final duration = formatDuration(note.startTime, note.endTime);
+
+        buffer.writeln(
+          "${start.toLocal().toString().split(' ').first} | ${note.address}",
+        );
+        buffer.writeln(
+          "From ${start.toString().split('.').first} → ${end != null ? end.toString().split('.').first : 'Ongoing'}",
+        );
+        buffer.writeln("Duration: $duration");
+        buffer.writeln(""); // blank line between notes
+      }
+
+      await Clipboard.setData(ClipboardData(text: buffer.toString()));
+
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Report copied to clipboard')),
+        );
+      }
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(SnackBar(content: Text('Failed to copy report: $e')));
+      }
+    }
+  }
+
   Future<void> _initFileAndNotes() async {
     Directory dir = await getApplicationDocumentsDirectory();
     _jsonFile = File('${dir.path}/$_fileName');
@@ -267,6 +304,23 @@ class _NotesPageState extends State<NotesPage> {
     setState(() {
       _isGridView = !_isGridView;
     });
+  }
+
+  void _cycleTheme() {
+    final currentIndex = ThemeMode.values.indexOf(widget.themeMode);
+    final nextIndex = (currentIndex + 1) % ThemeMode.values.length;
+    widget.onThemeChanged(ThemeMode.values[nextIndex]);
+  }
+
+  String _getThemeLabel() {
+    switch (widget.themeMode) {
+      case ThemeMode.light:
+        return 'Theme: Light';
+      case ThemeMode.dark:
+        return 'Theme: Dark';
+      case ThemeMode.system:
+        return 'Theme: System';
+    }
   }
 
   Future<Position> _determinePosition() async {
@@ -451,33 +505,37 @@ class _NotesPageState extends State<NotesPage> {
         backgroundColor: Theme.of(context).colorScheme.primary,
         foregroundColor: Theme.of(context).colorScheme.onPrimary,
         actions: [
-          IconButton(
-            icon: Icon(_isGridView ? Icons.list : Icons.grid_view),
-            tooltip: _isGridView
-                ? 'Switch to List View'
-                : 'Switch to Grid View',
-            onPressed: _toggleView,
-          ),
           PopupMenuButton<String>(
             onSelected: (value) {
-              if (value == 'Light') widget.onThemeChanged(ThemeMode.light);
-              if (value == 'Dark') widget.onThemeChanged(ThemeMode.dark);
-              if (value == 'System') widget.onThemeChanged(ThemeMode.system);
+              if (value == 'toggle_view') {
+                _toggleView();
+              } else if (value == 'cycle_theme') {
+                _cycleTheme();
+              }
             },
             itemBuilder: (context) => [
-              const PopupMenuItem(value: 'Light', child: Text('Light Mode')),
-              const PopupMenuItem(value: 'Dark', child: Text('Dark Mode')),
-              const PopupMenuItem(
-                value: 'System',
-                child: Text('System Default'),
+              PopupMenuItem(
+                value: 'toggle_view',
+                child: Text(
+                  _isGridView ? 'Switch to List View' : 'Switch to Grid View',
+                ),
+              ),
+              PopupMenuItem(
+                value: 'cycle_theme',
+                child: Text(_getThemeLabel()),
               ),
             ],
-            icon: const Icon(Icons.color_lens),
+            icon: const Icon(Icons.settings),
           ),
           IconButton(
             icon: const Icon(Icons.delete_sweep),
             tooltip: 'Clear All Notes',
             onPressed: _clearNotes,
+          ),
+          IconButton(
+            icon: const Icon(Icons.copy),
+            tooltip: 'Copy Report',
+            onPressed: _copyReportToClipboard,
           ),
         ],
       ),
@@ -507,7 +565,7 @@ class _NotesPageState extends State<NotesPage> {
             ),
       floatingActionButton: FloatingActionButton(
         onPressed: _startNote,
-        child: const Icon(Icons.play_arrow),
+        child: const Icon(Icons.gps_fixed),
       ),
     );
   }
