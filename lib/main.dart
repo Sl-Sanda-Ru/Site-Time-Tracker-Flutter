@@ -186,7 +186,8 @@ class _NotesPageState extends State<NotesPage> {
     _notificationTimer = Timer.periodic(const Duration(seconds: 1), (timer) {
       final ongoing = _notes.where((n) => n.endTime == null).toList();
       if (ongoing.isNotEmpty) {
-        _showOngoingNotification(ongoing.last);
+        // Changed: use first (newest) instead of last
+        _showOngoingNotification(ongoing.first);
       } else {
         timer.cancel();
       }
@@ -250,9 +251,16 @@ class _NotesPageState extends State<NotesPage> {
     final List<dynamic> jsonData = json.decode(contents);
     _notes = jsonData.map((e) => Note.fromJson(e)).toList();
 
+    // NEW: sort newest first by startTime
+    _notes.sort(
+      (a, b) =>
+          DateTime.parse(b.startTime).compareTo(DateTime.parse(a.startTime)),
+    );
+
     final ongoing = _notes.where((n) => n.endTime == null).toList();
     if (ongoing.isNotEmpty) {
-      await _showOngoingNotification(ongoing.last);
+      // Changed: first is newest ongoing
+      await _showOngoingNotification(ongoing.first);
     }
 
     setState(() {
@@ -428,9 +436,11 @@ class _NotesPageState extends State<NotesPage> {
       );
 
       setState(() {
-        _notes.add(note);
+        // Changed: insert at index 0 so newest appears first
+        _notes.insert(0, note);
       });
       await _saveNotes();
+
       final androidDetails = AndroidNotificationDetails(
         'start_channel',
         'Note Start',
@@ -447,13 +457,15 @@ class _NotesPageState extends State<NotesPage> {
         details,
       );
       await _showOngoingNotification(note);
-      if (!_notificationTimer!.isActive) {
+
+      if (_notificationTimer == null || !_notificationTimer!.isActive) {
         _notificationTimer = Timer.periodic(const Duration(seconds: 1), (
           timer,
         ) {
           final ongoing = _notes.where((n) => n.endTime == null).toList();
           if (ongoing.isNotEmpty) {
-            _showOngoingNotification(ongoing.last);
+            // Changed: first
+            _showOngoingNotification(ongoing.first);
           } else {
             timer.cancel();
           }
@@ -606,7 +618,7 @@ class _NotesPageState extends State<NotesPage> {
                   setState(() {
                     _notes.removeAt(index);
                   });
-                  await _saveNotes();
+                  _saveNotes();
                   ScaffoldMessenger.of(
                     context,
                   ).showSnackBar(const SnackBar(content: Text('Note deleted')));
