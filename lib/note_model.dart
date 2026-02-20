@@ -5,6 +5,9 @@ class Note {
   String address;
   double lat;
   double lng;
+  double? endLat;
+  double? endLng;
+  String? endAddress;
 
   Note({
     required this.id,
@@ -13,6 +16,9 @@ class Note {
     required this.address,
     required this.lat,
     required this.lng,
+    this.endLat,
+    this.endLng,
+    this.endAddress,
   });
 
   Map<String, dynamic> toJson() => {
@@ -22,6 +28,9 @@ class Note {
     'address': address,
     'lat': lat,
     'lng': lng,
+    'endLat': endLat,
+    'endLng': endLng,
+    'endAddress': endAddress,
   };
 
   factory Note.fromJson(Map<String, dynamic> json) => Note(
@@ -31,5 +40,8 @@ class Note {
     address: json['address'],
     lat: (json['lat'] as num).toDouble(),
     lng: (json['lng'] as num).toDouble(),
+    endLat: json['endLat'] != null ? (json['endLat'] as num).toDouble() : null,
+    endLng: json['endLng'] != null ? (json['endLng'] as num).toDouble() : null,
+    endAddress: json['endAddress'],
   );
 }

@@ -1,5 +1,6 @@
 import 'dart:convert';
 import 'dart:io';
+import 'dart:math';
 import 'dart:async';
 
 import 'package:flutter/material.dart';
@@ -42,6 +43,17 @@ String formatDuration(String startIso, String? endIso) {
   } catch (_) {
     return '';
   }
+}
+
+double calculateDistance(double lat1, double lon1, double lat2, double lon2) {
+  const p = 0.017453292519943295;
+  final a = 0.5 -
+      cos((lat2 - lat1) * p) / 2 +
+      cos(lat1 * p) *
+          cos(lat2 * p) *
+          (1 - cos((lon2 - lon1) * p)) /
+          2;
+  return 12742 * asin(sqrt(a));
 }
 
 Future<void> main() async {
@@ -482,18 +494,34 @@ class _NotesPageState extends State<NotesPage> {
   }
 
   Future<void> _endNoteAtIndex(int index) async {
-    final nowIso = DateTime.now().toIso8601String();
-    setState(() {
-      _notes[index].endTime = nowIso;
-    });
-    await _saveNotes();
-    final stillOngoing = _notes.any((n) => n.endTime == null);
-    if (!stillOngoing) {
-      await _cancelOngoingNotification();
-      _notificationTimer?.cancel();
-    } else {
-      final next = _notes.firstWhere((n) => n.endTime == null);
-      await _showOngoingNotification(next);
+    try {
+      final nowIso = DateTime.now().toIso8601String();
+      
+      // Get current position and address
+      final pos = await _determinePosition();
+      final endAddress = await _getAddressFromLatLng(pos.latitude, pos.longitude);
+      
+      setState(() {
+        _notes[index].endTime = nowIso;
+        _notes[index].endLat = pos.latitude;
+        _notes[index].endLng = pos.longitude;
+        _notes[index].endAddress = endAddress;
+      });
+      await _saveNotes();
+      final stillOngoing = _notes.any((n) => n.endTime == null);
+      if (!stillOngoing) {
+        await _cancelOngoingNotification();
+        _notificationTimer?.cancel();
+      } else {
+        final next = _notes.firstWhere((n) => n.endTime == null);
+        await _showOngoingNotification(next);
+      }
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Failed to end note: $e')),
+        );
+      }
     }
   }
 
@@ -584,6 +612,9 @@ class _NotesPageState extends State<NotesPage> {
 
   Widget _buildNoteCard(Note note, int index) {
     final ongoing = note.endTime == null;
+    final distance = (note.endLat != null && note.endLng != null)
+        ? calculateDistance(note.lat, note.lng, note.endLat!, note.endLng!)
+        : null;
 
     return Card(
       elevation: 2,
@@ -654,6 +685,17 @@ class _NotesPageState extends State<NotesPage> {
                   fontWeight: FontWeight.w600,
                 ),
               ),
+              if (distance != null) ...[
+                const SizedBox(height: 6),
+                Text(
+                  'Ended Within: ${distance.toStringAsFixed(2)} km Of Start Point',
+                  style: const TextStyle(
+                    fontSize: 12,
+                    fontWeight: FontWeight.w600,
+                    color: Colors.blue,
+                  ),
+                ),
+              ],
               const SizedBox(height: 6),
               Text(
                 'Address: ${note.address}',
@@ -736,6 +778,11 @@ class _NoteDetailPageState extends State<NoteDetailPage> {
   @override
   Widget build(BuildContext context) {
     final ongoing = widget.note.endTime == null;
+    final distance = (widget.note.endLat != null && widget.note.endLng != null)
+        ? calculateDistance(widget.note.lat, widget.note.lng,
+            widget.note.endLat!, widget.note.endLng!)
+        : null;
+
     return Scaffold(
       appBar: AppBar(
         title: const Text('Note Details'),
@@ -753,19 +800,37 @@ class _NoteDetailPageState extends State<NoteDetailPage> {
             ),
             const SizedBox(height: 12),
             Text(
+              'Start Address: ${widget.note.address}',
+              style: const TextStyle(fontSize: 14),
+            ),
+            const SizedBox(height: 12),
+            Text(
               'End: ${ongoing ? 'Ongoing' : _formatIso(widget.note.endTime!)}',
               style: const TextStyle(fontSize: 18),
             ),
+            if (widget.note.endAddress != null) ...[
+              const SizedBox(height: 12),
+              Text(
+                'End Address: ${widget.note.endAddress}',
+                style: const TextStyle(fontSize: 14),
+              ),
+            ],
             const SizedBox(height: 12),
             Text(
               'Duration: ${formatDuration(widget.note.startTime, widget.note.endTime)}',
               style: const TextStyle(fontSize: 16, fontWeight: FontWeight.w600),
             ),
-            const SizedBox(height: 12),
-            Text(
-              'Address: ${widget.note.address}',
-              style: const TextStyle(fontSize: 16),
-            ),
+            if (distance != null) ...[
+              const SizedBox(height: 12),
+              Text(
+                'Ended Within: ${distance.toStringAsFixed(2)} km of Start Point',
+                style: const TextStyle(
+                  fontSize: 16,
+                  fontWeight: FontWeight.w600,
+                  color: Colors.blue,
+                ),
+              ),
+            ],
             const SizedBox(height: 12),
             const Spacer(),
             if (ongoing)
