@@ -1,4 +1,4 @@
-name: Flutter APK Build
+name: Flutter Build
 
 on:
   push:
@@ -7,52 +7,76 @@ on:
 
 jobs:
   build:
-    runs-on: ubuntu-latest
+    name: Build (${{ matrix.platform }})
+    runs-on: ${{ matrix.os }}
+
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - platform: android
+            os: ubuntu-latest
+            build-cmd: flutter build apk --release
+            artifact-name: app-release
+            artifact-path: build/app/outputs/flutter-apk/app-release.apk
+          - platform: ios
+            os: macos-latest
+            build-cmd: flutter build ios --release --no-codesign
+            artifact-name: ios-release
+            artifact-path: build/ios/iphoneos/FlutterIpaExport.ipa
 
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
 
-      - name: Setup Flutter
-        uses: subosito/flutter-action@v2
-        with:
-          flutter-version: '3.32.8'
-          channel: stable
-          cache: true
+      # Java must be set up before Flutter for Android builds
       - name: Setup Java
+        if: matrix.platform == 'android'
         uses: actions/setup-java@v4
         with:
           java-version: '17'
           distribution: 'temurin'
 
-      - name: Install Android SDK Command-line tools
+      - name: Setup Flutter
+        uses: subosito/flutter-action@v2
+        with:
+          flutter-version-file: .flutter-version
+          channel: stable
+          cache: true
+
+      # Use the pre-installed Android SDK sdkmanager to add only the required NDK
+      - name: Install Android NDK
+        if: matrix.platform == 'android'
         run: |
-          sudo apt-get update
-          sudo apt-get install -y wget unzip
-          wget https://dl.google.com/android/repository/commandlinetools-linux-11076708_latest.zip -O cmdline-tools.zip
-          mkdir -p $ANDROID_HOME/cmdline-tools
-          unzip -q cmdline-tools.zip -d $ANDROID_HOME/cmdline-tools
-          mv $ANDROID_HOME/cmdline-tools/cmdline-tools $ANDROID_HOME/cmdline-tools/latest
           yes | $ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager --licenses
-          $ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager "platform-tools" "platforms;android-34" "build-tools;34.0.0" \
-            "cmake;3.22.1" "ndk;27.0.12077973"
+          $ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager "ndk;27.0.12077973"
 
       - name: Cache Gradle
+        if: matrix.platform == 'android'
         uses: actions/cache@v4
         with:
-          path: ~/.gradle/caches
+          path: |
+            ~/.gradle/caches
+            ~/.gradle/wrapper
           key: gradle-${{ hashFiles('**/*.gradle*', '**/gradle-wrapper.properties') }}
           restore-keys: gradle-
 
       - name: Install dependencies
         run: flutter pub get
 
+      - name: Build
+        run: ${{ matrix.build-cmd }}
 
-      - name: Build release APK
-        run: flutter build apk --release
+      - name: Create IPA
+        if: matrix.platform == 'ios'
+        run: |
+          mkdir build/ios/iphoneos/Payload
+          mv build/ios/iphoneos/Runner.app build/ios/iphoneos/Payload/
+          cd build/ios/iphoneos
+          zip -qq -r -9 FlutterIpaExport.ipa Payload
 
-      - name: Upload release APK
+      - name: Upload artifact
         uses: actions/upload-artifact@v4
         with:
-          name: app-release
-          path: build/app/outputs/flutter-apk/app-release.apk
+          name: ${{ matrix.artifact-name }}
+          path: ${{ matrix.artifact-path }}
